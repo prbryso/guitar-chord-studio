@@ -1,1 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#152c29">
+<title>Guitar Chord Studio</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#17322e;background:#f3f1e9;color-scheme:light}
+*{box-sizing:border-box}body{margin:0}main{max-width:1060px;margin:auto;padding:28px 18px 60px}
+header{padding:16px 0 24px}h1{font-size:clamp(30px,5vw,48px);letter-spacing:-2px;margin:5px 0}h2{margin:0 0 18px;font-size:23px}
+p{line-height:1.55}.eyebrow{font-size:12px;letter-spacing:3px;text-transform:uppercase;color:#67766a}.muted{color:#586a63;font-size:14px}
+.layout{display:grid;grid-template-columns:minmax(260px,.85fr) minmax(300px,1.3fr);gap:20px}.panel{background:#fffef9;border:1px solid #d7ded2;border-radius:22px;padding:24px;box-shadow:0 8px 26px #17322e08}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}label{font-weight:600;font-size:14px}select,input,button{font:inherit;min-height:44px;border:1px solid #bac8bd;border-radius:10px;padding:10px 12px;background:#fff;color:#17322e}
+select{max-width:100%}button{cursor:pointer;font-weight:600;touch-action:manipulation}button:hover{background:#edf1e8}button:disabled{opacity:.4;cursor:default}button.primary{background:#1b574b;color:white;border-color:#1b574b}button.danger{color:#9e342d}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #d39534;outline-offset:3px}#chord{flex:1}#diagram{max-width:320px;margin:10px auto}svg{width:100%;display:block}
+#shape{text-align:center;font-family:ui-monospace,monospace;letter-spacing:3px}#description{text-align:center;min-height:44px}.wide{width:100%}.controls{margin:20px 0}.controls input[type=number]{width:86px}input[type=checkbox]{min-height:24px;width:24px;accent-color:#1b574b}
+ol{padding:0;list-style:none;display:grid;gap:9px}li{border:1px solid #d7ded2;border-radius:12px;padding:10px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}li.active{background:#f8e5b7;border-color:#b37613}li .name{margin-right:auto}li .name button{font-size:20px;background:transparent;border:0;padding:4px 8px}li .tools{display:flex;gap:5px}li .tools button{padding:6px 10px}
+#status{padding:12px 0;min-height:48px;font-size:14px}footer{margin-top:22px}#empty{padding:18px;border:1px dashed #bac8bd;border-radius:12px}@media(max-width:720px){.layout{grid-template-columns:1fr}.panel{padding:20px}main{padding-top:16px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">Learn · Listen · Create</div>
+  <h1>Guitar Chord Studio</h1>
+  <p class="muted">Find a shape. Hear the chord. Build your next progression.</p>
+</header>
+<div class="layout">
+<section class="panel" aria-labelledby="libraryTitle">
+<h2 id="libraryTitle">Chord library</h2>
+<label for="chord">Choose a chord</label>
+<div class="row">
+  <select id="chord"></select>
+  <button id="audition" class="primary">▶ Hear</button>
+</div>
+<div id="diagram"></div>
+<div id="shape"></div>
+<p id="description" class="muted"></p>
+<button id="add" class="primary wide">+ Add to progression</button>
+<p class="muted">
+  Standard tuning: E A D G B e, low to high, left to right.
+  × = muted, ○ = open.
+  Numbers in dots are fingers: 1 index, 2 middle, 3 ring, 4 little.
+  A joined line marks a barre.
+</p>
+</section>
+<section class="panel" aria-labelledby="progressionTitle">
+<h2 id="progressionTitle">Your progression</h2>
+<label for="starter">Starter progressions</label>
+<div class="row">
+<select id="starter">
+  <option value="pop">Pop · C – G – Am – F</option>
+  <option value="gentle">Gentle · Cmaj7 – Am7 – Dm7 – G7</option>
+  <option value="blues">12-bar blues · A7 / D7 / E7</option>
+  <option value="minor">Minor · Am – Dm – E7 – Am</option>
+</select>
+<button id="load">Load</button>
+</div>
+<p class="muted">
+  Load replaces the list. Tap a chord name to view its shape;
+  use arrows to reorder.
+</p>
+<ol id="progression" aria-label="Progression chords"></ol>
+<p id="empty" hidden>Add a chord to get started.</p>
+<div class="controls row">
+  <label for="tempo">Tempo</label>
+  <input id="tempo" type="number" min="30" max="240"
+         step="1" value="90" inputmode="numeric">
+  <span>BPM</span>
+  <label for="beats">Beats / chord</label>
+  <select id="beats">
+    <option>1</option><option>2</option>
+    <option selected>4</option><option>8</option>
+  </select>
+</div>
+<div class="row">
+  <button id="play" class="primary">▶ Play</button>
+  <button id="stop" disabled>■ Stop</button>
+  <input id="loop" type="checkbox" checked>
+  <label for="loop">Loop</label>
+  <button id="clear" class="danger">Clear</button>
+</div>
+<div id="status" role="status" aria-live="polite">
+  Ready. Each chord plays once for the selected number of beats.
+</div>
+</section>
+</div>
+<footer class="muted">
+  Synthesized plucked-string audio · No downloads or accounts needed.
+  On iPad, tap Hear or Play to enable audio and raise your media volume.
+  Keep this page visible during playback.
+</footer>
+</main>
+<script>
+'use strict';
 
+// Frets and fingers are ordered low E to high e. -1 means muted.
+const chords = {
+ C:     {f:[-1,3,2,0,1,0],d:[0,3,2,0,1,0]},
+ Cm:    {f:[-1,3,5,5,4,3],d:[0,1,3,4,2,1],bar:[3,1,5]},
+ C7:    {f:[-1,3,2,3,1,0],d:[0,3,2,4,1,0]},
+ Cmaj7: {f:[-1,3,2,0,0,0],d:[0,3,2,0,0,0]},
+ D:     {f:[-1,-1,0,2,3,2],d:[0,0,0,1,3,2]},
+ Dm:    {f:[-1,-1,0,2,3,1],d:[0,0,0,2,3,1]},
+ D7:    {f:[-1,-1,0,2,1,2],d:[0,0,0,2,1,3]},
+ Dm7:   {f:[-1,-1,0,2,1,1],d:[0,0,0,2,1,1],bar:[1,4,5]},
+ Dmaj7: {f:[-1,-1,0,2,2,2],d:[0,0,0,1,1,1],bar:[2,3,5]},
+ Dsus2: {f:[-1,-1,0,2,3,0],d:[0,0,0,1,3,0]},
+ Dsus4: {f:[-1,-1,0,2,3,3],d:[0,0,0,1,3,4]},
+ E:     {f:[0,2,2,1,0,0],d:[0,2,3,1,0,0]},
+ Em:    {f:[0,2,2,0,0,0],d:[0,2,3,0,0,0]},
+ E7:    {f:[0,2,0,1,0,0],d:[0,2,0,1,0,0]},
+ Em7:   {f:[0,2,2,0,3,0],d:[0,2,3,0,4,0]},
+ F:     {f:[1,3,3,2,1,1],d:[1,3,4,2,1,1],bar:[1,0,5]},
+ Fm:    {f:[1,3,3,1,1,1],d:[1,3,4,1,1,1],bar:[1,0,5]},
+ Fmaj7: {f:[-1,-1,3,2,1,0],d:[0,0,3,2,1,0]},
+ G:     {f:[3,2,0,0,0,3],d:[2,1,0,0,0,3]},
+ G7:    {f:[3,2,0,0,0,1],d:[3,2,0,0,0,1]},
+ Gm:    {f:[3,5,5,3,3,3],d:[1,3,4,1,1,1],bar:[3,0,5]},
+ A:     {f:[-1,0,2,2,2,0],d:[0,0,1,2,3,0]},
+ Am:    {f:[-1,0,2,2,1,0],d:[0,0,2,3,1,0]},
+ A7:    {f:[-1,0,2,0,2,0],d:[0,0,2,0,3,0]},
+ Am7:   {f:[-1,0,2,0,1,0],d:[0,0,2,0,1,0]},
+ Amaj7: {f:[-1,0,2,1,2,0],d:[0,0,2,1,3,0]},
+ Asus2: {f:[-1,0,2,2,0,0],d:[0,0,1,2,0,0]},
+ Asus4: {f:[-1,0,2,2,3,0],d:[0,0,1,2,3,0]},
+ B:     {f:[-1,2,4,4,4,2],d:[0,1,2,3,4,1],bar:[2,1,5]},
+ Bm:    {f:[-1,2,4,4,3,2],d:[0,1,3,4,2,1],bar:[2,1,5]},
+ B7:    {f:[-1,2,1,2,0,2],d:[0,2,1,3,0,4]},
+ Bm7:   {f:[-1,2,4,2,3,2],d:[0,1,3,1,2,1],bar:[2,1,5]},
+ Bb:    {f:[-1,1,3,3,3,1],d:[0,1,2,3,4,1],bar:[1,1,5]},
+ 'F#m': {f:[2,4,4,2,2,2],d:[1,3,4,1,1,1],bar:[2,0,5]}
+};
+
+const starters = {
+ pop:['C','G','Am','F'],
+ gentle:['Cmaj7','Am7','Dm7','G7'],
+ blues:['A7','A7','A7','A7','D7','D7',
+        'A7','A7','E7','D7','A7','E7'],
+ minor:['Am','Dm','E7','Am']
+};
+
+const $ = id => document.getElementById(id);
+
+let progression = starters.pop.slice();
+let current = -1;
+let playing = false;
+let timer = null;
+let run = 0;
+let audio, master;
+const voices = new Set();
+const tuning = [40,45,50,55,59,64];
+
+Object.keys(chords).forEach(name => {
+ const o = document.createElement('option');
+ o.value = o.textContent = name;
+ $('chord').append(o);
+});
+
+function showChord() {
+ const name = $('chord').value;
+ const c = chords[name];
+ const positive = c.f.filter(f => f > 0);
+ const start = Math.max(...positive) > 5
+   ? Math.min(...positive) : 1;
+ const x = i => 48 + i * 40;
+ const y = f => 70 + (f - start + .5) * 40;
+
+ let s = `<svg viewBox="0 0 300 320" role="img"
+   aria-label="${name} chord fingering">
+   <title>${name}: ${c.f.map(f => f < 0 ? 'muted' : f)
+     .join(', ')} from low E to high e</title>`;
+
+ for (let r = 0; r <= 5; r++) {
+  s += `<line x1="48" y1="${70+r*40}" x2="248"
+    y2="${70+r*40}" stroke="#b8c1b2"
+    stroke-width="${r===0 && start===1 ? 6 : 1.5}"/>`;
+ }
+
+ for (let i = 0; i < 6; i++) {
+  s += `<line x1="${x(i)}" y1="70" x2="${x(i)}"
+    y2="270" stroke="#6a7a70" stroke-width="${2.5-i*.3}"/>
+    <text x="${x(i)}" y="300" text-anchor="middle"
+    fill="#17322e" font-size="16">
+    ${['E','A','D','G','B','e'][i]}</text>`;
+ }
+
+ for (let r = 0; r < 5; r++) {
+  s += `<text x="20" y="${97+r*40}" text-anchor="middle"
+    fill="#586a63" font-size="13">${start+r}</text>`;
+ }
+
+ if (c.bar) {
+  s += `<line x1="${x(c.bar[1])}" y1="${y(c.bar[0])}"
+    x2="${x(c.bar[2])}" y2="${y(c.bar[0])}"
+    stroke="#1b574b" stroke-width="24" stroke-linecap="round"/>`;
+ }
+
+ c.f.forEach((f,i) => {
+  if (f <= 0) {
+   s += `<text x="${x(i)}" y="51" text-anchor="middle"
+     font-size="23" fill="#17322e">${f<0 ? '×' : '○'}</text>`;
+  } else {
+   s += `<circle cx="${x(i)}" cy="${y(f)}" r="13"
+     fill="#1b574b"/>
+     <text x="${x(i)}" y="${y(f)+5}" text-anchor="middle"
+     fill="white" font-size="14" font-weight="bold">
+     ${c.d[i]}</text>`;
+  }
+ });
+
+ $('diagram').innerHTML = s + '</svg>';
+ $('shape').textContent = c.f.map(f => f < 0 ? 'x' : f).join(' ');
+ $('description').textContent =
+   name + ' · ' + (c.bar ? 'Barre fret '+c.bar[0]+'. ' : '') +
+   'Frets ' + c.f.map(f => f < 0 ? 'muted' : f).join(' – ') + '.';
+}
+
+function render() {
+ const list = $('progression');
+ list.replaceChildren();
+
+ progression.forEach((name,i) => {
+  const li = document.createElement('li');
+  if (i === current) li.className = 'active';
+
+  const label = document.createElement('span');
+  label.className = 'name';
+
+  const pick = document.createElement('button');
+  pick.textContent = (i+1) + '. ' + name;
+  pick.setAttribute('aria-label','View chord '+(i+1)+': '+name);
+  pick.onclick = () => {
+   $('chord').value = name;
+   showChord();
+  };
+  label.append(pick);
+  li.append(label);
+
+  const tools = document.createElement('span');
+  tools.className = 'tools';
+
+  [
+   ['↑','Move earlier',-1],
+   ['↓','Move later',1],
+   ['×','Remove',0]
+  ].forEach(([text,title,delta]) => {
+   const b = document.createElement('button');
+   b.textContent = text;
+   b.setAttribute('aria-label',title+' chord '+(i+1)+' '+name);
+   b.disabled = playing ||
+     (delta === -1 && i === 0) ||
+     (delta === 1 && i === progression.length-1);
+
+   b.onclick = () => {
+    stop();
+    if (delta) {
+     [progression[i],progression[i+delta]] =
+       [progression[i+delta],progression[i]];
+    } else {
+     progression.splice(i,1);
+    }
+    render();
+   };
+   tools.append(b);
+  });
+
+  li.append(tools);
+  list.append(li);
+ });
+
+ $('empty').hidden = progression.length > 0;
+ $('play').disabled = playing || !progression.length;
+ $('stop').disabled = !playing;
+ ['add','load','clear','tempo','beats','audition'].forEach(id => {
+  $(id).disabled = playing;
+ });
+}
+
+async function enableAudio() {
+ const Audio = window.AudioContext || window.webkitAudioContext;
+ if (!Audio) throw new Error('Web Audio is unavailable in this browser.');
+
+ if (!audio) {
+  audio = new Audio();
+  master = audio.createGain();
+  master.gain.value = .7;
+  master.connect(audio.destination);
+ }
+
+ if (audio.state !== 'running') await audio.resume();
+ if (audio.state !== 'running') {
+  throw new Error('Audio is paused. Tap Play again.');
+ }
+}
+
+function sound(name,when,duration) {
+ chords[name].f.forEach((f,i) => {
+  if (f < 0) return;
+
+  const time = when + i * .018;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+
+  osc.type = 'triangle';
+  osc.frequency.value =
+    440 * Math.pow(2,(tuning[i]+f-69)/12);
+
+  gain.gain.setValueAtTime(0,time);
+  gain.gain.linearRampToValueAtTime(.10,time+.008);
+  gain.gain.exponentialRampToValueAtTime(.001,time+duration);
+
+  osc.connect(gain);
+  gain.connect(master);
+  voices.add(osc);
+
+  osc.onended = () => {
+   voices.delete(osc);
+   osc.disconnect();
+   gain.disconnect();
+  };
+
+  osc.start(time);
+  osc.stop(time+duration+.03);
+ });
+}
+
+function stop() {
+ run++;
+ playing = false;
+ clearInterval(timer);
+ timer = null;
+ current = -1;
+
+ voices.forEach(v => {
+  try { v.stop(); } catch(e) {}
+ });
+ voices.clear();
+
+ render();
+ $('status').textContent = 'Stopped.';
+}
+
+async function play() {
+ stop();
+ if (!progression.length) return;
+
+ const bpm = Math.round(Number($('tempo').value));
+ if (!Number.isFinite(bpm) || bpm < 30 || bpm > 240) {
+  $('status').textContent = 'Enter a tempo from 30 to 240 BPM.';
+  return;
+ }
+
+ $('tempo').value = bpm;
+ const token = run;
+
+ try {
+  await enableAudio();
+  if (token !== run) return;
+
+  playing = true;
+  const length = 60 / bpm * Number($('beats').value);
+  let next = audio.currentTime + .06;
+  let index = 0;
+  let end = null;
+  const cues = [];
+
+  render();
+  $('status').textContent = 'Playing at '+bpm+' BPM.';
+
+  function tick() {
+   if (!playing || token !== run) return;
+   const now = audio.currentTime;
+
+   while (end === null && next < now + .15) {
+    sound(progression[index],next,Math.min(length*.9,3));
+    cues.push({time:next,index});
+    next += length;
+    index++;
+
+    if (index === progression.length) {
+     if ($('loop').checked) index = 0;
+     else end = next;
+    }
+   }
+
+   let changed = false;
+   while (cues.length && cues[0].time <= now) {
+    current = cues.shift().index;
+    changed = true;
+   }
+
+   if (changed) {
+    render();
+    $('chord').value = progression[current];
+    showChord();
+   }
+
+   if (end !== null && now >= end) {
+    stop();
+    $('status').textContent = 'Progression complete.';
+   }
+  }
+
+  timer = setInterval(tick,25);
+  tick();
+
+ } catch(e) {
+  stop();
+  $('status').textContent =
+    e.message || 'Could not start audio. Tap Play to try again.';
+ }
+}
+
+$('chord').onchange = showChord;
+
+$('audition').onclick = async () => {
+ stop();
+ const token = run;
+ const name = $('chord').value;
+ try {
+  await enableAudio();
+  if (token !== run) return;
+  sound(name,audio.currentTime+.02,2);
+  $('status').textContent = 'Playing '+name+'.';
+ } catch(e) {
+  $('status').textContent = e.message;
+ }
+};
+
+$('add').onclick = () => {
+ stop();
+ progression.push($('chord').value);
+ render();
+ $('status').textContent = 'Chord added.';
+};
+
+$('load').onclick = () => {
+ stop();
+ progression = starters[$('starter').value].slice();
+ render();
+ $('status').textContent = 'Starter loaded.';
+};
+
+$('clear').onclick = () => {
+ stop();
+ progression = [];
+ render();
+ $('status').textContent = 'Progression cleared.';
+};
+
+$('play').onclick = play;
+$('stop').onclick = stop;
+
+document.addEventListener('visibilitychange',() => {
+ if (document.hidden) {
+  stop();
+  $('status').textContent =
+    'Paused while the page is hidden. Tap Play to restart.';
+ }
+});
+
+window.addEventListener('pagehide',stop);
+showChord();
+render();
+</script>
+</body>
+</html>
