@@ -947,6 +947,129 @@ render();
  update();
 })();
 </script>
-  
+  <!-- Saved custom chord library -->
+<script>
+(() => {
+ 'use strict';
+
+ if (document.getElementById('savedLibraryNote')) return;
+
+ const storageKey = 'guitarChordStudio.customLibrary.v1';
+ const restoredNames = new Map();
+ const selector = document.getElementById('chord');
+ const saveButton = document.getElementById('saveShape');
+
+ function addOption(key) {
+   const option = document.createElement('option');
+   option.value = option.textContent = key;
+   selector.append(option);
+ }
+
+ // Your E9: low E muted, then frets 7–6–7–7–7.
+ if (!chords['E9']) {
+   chords['E9'] = {
+     f: [-1,7,6,7,7,7],
+     d: [0,2,1,3,3,3],
+     bar: [7,3,5]
+   };
+   addOption('E9');
+ }
+
+ const note = document.createElement('p');
+ note.id = 'savedLibraryNote';
+ note.className = 'muted';
+ note.textContent =
+   'Custom chords are saved in this browser and remain after ' +
+   'refreshing. They do not sync between devices. ' +
+   'Clearing website data removes them.';
+
+ if (saveButton) {
+   saveButton.closest('section').append(note);
+
+   document.querySelectorAll('#noteStudio p').forEach(p => {
+     if (p.textContent.includes('Custom shapes stay available until')) {
+       p.textContent =
+         'Note names use sharps (C♯ is the same pitch as D♭).';
+     }
+   });
+ }
+
+ function valid(item) {
+   return item &&
+     typeof item.name === 'string' &&
+     item.name.length > 0 &&
+     item.name.length <= 160 &&
+     Array.isArray(item.f) &&
+     item.f.length === 6 &&
+     item.f.every(f =>
+       Number.isInteger(f) && f >= -1 && f <= 15
+     ) &&
+     item.f.some(f => f >= 0);
+ }
+
+ try {
+   const saved = JSON.parse(
+     localStorage.getItem(storageKey) || '[]'
+   );
+
+   if (!Array.isArray(saved)) {
+     throw new Error('Invalid saved library');
+   }
+
+   saved.filter(valid).forEach(item => {
+     let key = item.name + ' (saved)';
+     let number = 2;
+
+     while (Object.prototype.hasOwnProperty.call(chords, key)) {
+       key = item.name + ' (saved ' + number++ + ')';
+     }
+
+     chords[key] = {
+       f: item.f.slice(),
+       d: [0,0,0,0,0,0],
+       custom: true
+     };
+
+     restoredNames.set(key, item.name);
+     addOption(key);
+   });
+ } catch (error) {
+   note.textContent =
+     'Saved chords could not be loaded. Existing chords still ' +
+     'work. Browser storage may be unavailable.';
+ }
+
+ function persist() {
+   const saved = Object.entries(chords)
+     .filter(([, chord]) => chord.custom)
+     .map(([key, chord]) => ({
+       name: restoredNames.get(key) || key,
+       f: chord.f.slice()
+     }));
+
+   try {
+     localStorage.setItem(storageKey, JSON.stringify(saved));
+
+     note.textContent =
+       saved.length + ' custom chord' +
+       (saved.length === 1 ? '' : 's') +
+       ' saved in this browser. Select them in Choose a chord. ' +
+       'This library does not sync between devices.';
+   } catch (error) {
+     note.textContent =
+       'This browser could not save your chords. They remain ' +
+       'available only until this page closes or reloads.';
+   }
+ }
+
+ if (saveButton) {
+   saveButton.addEventListener('click', persist);
+ }
+
+ if (Object.values(chords).some(chord => chord.custom)) {
+   persist();
+ }
+})();
+</script>
 </body>
 </html>
