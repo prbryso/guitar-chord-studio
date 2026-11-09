@@ -770,6 +770,183 @@ render();
  refresh();
 })();
 </script>
+
+<!-- Automatic chord names -->
+<script>
+(() => {
+ 'use strict';
+
+ const summary = document.getElementById('noteSummary');
+ if (!summary || document.getElementById('chordGuesses')) return;
+
+ const box = document.createElement('div');
+ box.innerHTML = `
+   <label for="chordGuesses">Suggested chord name</label>
+   <div class="row">
+     <select id="chordGuesses"
+             aria-describedby="chordGuessHelp"></select>
+     <button id="useChordGuess" type="button">
+       Use this name
+     </button>
+   </div>
+   <p id="chordGuessHelp" class="muted"
+      role="status" aria-live="polite"></p>
+ `;
+ summary.insertAdjacentElement('afterend', box);
+
+ const menu = document.getElementById('chordGuesses');
+ const use = document.getElementById('useChordGuess');
+ const help = document.getElementById('chordGuessHelp');
+ const nameField = document.getElementById('shapeName');
+
+ const names = [
+   'C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'
+ ];
+ const tuning = [40,45,50,55,59,64];
+
+ const types = [
+   ['',             [0,4,7]],
+   ['m',            [0,3,7]],
+   ['dim',          [0,3,6]],
+   ['aug',          [0,4,8]],
+   ['sus2',         [0,2,7]],
+   ['sus4',         [0,5,7]],
+   ['6',            [0,4,7,9]],
+   ['m6',           [0,3,7,9]],
+   ['7',            [0,4,7,10]],
+   ['maj7',         [0,4,7,11]],
+   ['m7',           [0,3,7,10]],
+   ['m(maj7)',      [0,3,7,11]],
+   ['dim7',         [0,3,6,9]],
+   ['m7♭5',         [0,3,6,10]],
+   ['7sus4',        [0,5,7,10]],
+   ['add9',         [0,2,4,7]],
+   ['m(add9)',      [0,2,3,7]],
+   ['9',            [0,2,4,7,10]],
+   ['maj9',         [0,2,4,7,11]],
+   ['m9',           [0,2,3,7,10]],
+   ['7♭9',          [0,1,4,7,10]],
+   ['7♯9',          [0,3,4,7,10]],
+   ['11',           [0,2,4,5,7,10]],
+   ['m11',          [0,2,3,5,7,10]],
+   ['13',           [0,2,4,7,9,10]],
+   ['7 (no 5)',     [0,4,10]],
+   ['maj7 (no 5)',  [0,4,11]],
+   ['m7 (no 5)',    [0,3,10]],
+   ['9 (no 5)',     [0,2,4,10]],
+   ['maj9 (no 5)',  [0,2,4,11]],
+   ['m9 (no 5)',    [0,2,3,10]]
+ ];
+
+ function identify(frets) {
+   const midi = frets.flatMap((f,i) =>
+     f < 0 ? [] : [tuning[i] + f]
+   );
+   if (!midi.length) return [];
+
+   const pcs = [...new Set(midi.map(n => n % 12))];
+   const bass = Math.min(...midi) % 12;
+   const matches = [];
+
+   for (let root = 0; root < 12; root++) {
+     for (const [suffix, intervals] of types) {
+       if (intervals.length !== pcs.length) continue;
+
+       if (intervals.every(n => pcs.includes((root+n) % 12))) {
+         matches.push({
+           name: names[root] + suffix +
+             (root === bass ? '' : '/' + names[bass]),
+           score: (root === bass ? 0 : 10) +
+             (suffix.includes('no 5') ? 2 : 0)
+         });
+       }
+     }
+   }
+
+   matches.sort((a,b) =>
+     a.score - b.score || a.name.localeCompare(b.name)
+   );
+   return matches.map(m => m.name);
+ }
+
+ let lastAutomatic = '';
+
+ function update() {
+   const match = summary.textContent.match(
+     /Low E → high e:\s*([^.]+)\./
+   );
+   if (!match) return;
+
+   const frets = match[1].split('–').map(s =>
+     s.trim() === '×' ? -1 : Number(s.trim())
+   );
+
+   if (
+     frets.length !== 6 ||
+     frets.some(f => !Number.isInteger(f) || f < -1 || f > 15)
+   ) return;
+
+   const suggestions = identify(frets);
+   menu.replaceChildren();
+
+   for (const name of suggestions) {
+     const option = document.createElement('option');
+     option.value = option.textContent = name;
+     menu.append(option);
+   }
+
+   menu.disabled = use.disabled = !suggestions.length;
+
+   if (!suggestions.length) {
+     const option = document.createElement('option');
+     option.textContent = 'No common chord match';
+     menu.append(option);
+   }
+
+   if (
+     !nameField.value.trim() ||
+     nameField.value === lastAutomatic
+   ) {
+     nameField.value = suggestions[0] || '';
+     lastAutomatic = nameField.value;
+   }
+
+   if (!frets.some(f => f >= 0)) {
+     help.textContent = 'Select notes to identify a chord.';
+   } else if (suggestions.length > 1) {
+     help.textContent =
+       'These notes fit several names. Choose one, click ' +
+       'Use this name, then Add shape to progression. ' +
+       'A slash names the bass note.';
+   } else if (suggestions.length === 1) {
+     help.textContent =
+       'Recognized: ' + suggestions[0] +
+       '. Click Use this name, then Add shape to progression.';
+   } else {
+     help.textContent =
+       'No exact match in the built-in chord list. ' +
+       'You can still enter your own name and add this shape.';
+   }
+ }
+
+ use.onclick = () => {
+   if (menu.disabled) return;
+   nameField.value = menu.value;
+   lastAutomatic = menu.value;
+   help.textContent =
+     'Name selected. Tap + Add shape to progression ' +
+     'to save it to the chord menu and progression.';
+ };
+
+ new MutationObserver(update).observe(summary, {
+   childList: true,
+   characterData: true,
+   subtree: true
+ });
+
+ update();
+})();
+</script>
   
 </body>
 </html>
